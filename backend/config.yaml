@@ -1,0 +1,11 @@
+server:
+  port: 8080
+database:
+  driver: sqlite
+  dsn: "./doctree.db"
+auth:
+  mode: dev
+  providers: []
+jwt:
+  secret: "doctree-dev-secret-change-in-production"
+  expire_hours: 24
