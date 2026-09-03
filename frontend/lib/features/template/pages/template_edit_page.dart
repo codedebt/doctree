@@ -13,6 +13,7 @@ import '../../../models/template.dart';
 import '../../../shared/widgets/confirm_dialog.dart';
 import '../../../shared/widgets/error_widget.dart';
 import '../../../shared/widgets/loading_widget.dart';
+import '../../../shared/widgets/reorder_handle.dart';
 import '../template_provider.dart';
 import '../widgets/node_type_editor.dart';
 import '../widgets/rule_editor.dart';
@@ -29,13 +30,12 @@ class TemplateEditPage extends ConsumerStatefulWidget {
 class _TemplateEditPageState extends ConsumerState<TemplateEditPage> {
   bool _actionBusy = false;
 
+  // 通过刷新 templateDetailProvider 拉取，使结构变更（新增/删除/排序）同时写回该 provider 的缓存，
+  // 否则页面重建时仍会拿到变更前的旧数据。
   Future<Template> _fetchDetail() async {
-    final response = await ref.read(apiClientProvider).get<dynamic>(
-          ApiEndpoints.template(widget.templateId),
-        );
-    final body = response.data;
-    final data = body is Map && body.containsKey('data') ? body['data'] : body;
-    final template = Template.fromJson(Map<String, dynamic>.from(data as Map));
+    final template = await ref.refresh(
+      templateDetailProvider(widget.templateId).future,
+    );
     ref
         .read(templateEditorProvider(widget.templateId).notifier)
         .loadTemplate(template);
@@ -506,7 +506,13 @@ class _NodeTypesTabState extends ConsumerState<_NodeTypesTab> {
     }
   }
 
+  Future<void> _reorder(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex -= 1;
+    await _move(oldIndex, newIndex);
+  }
+
   Future<void> _move(int oldIndex, int newIndex) async {
+    if (oldIndex == newIndex) return;
     final previous = List<NodeType>.from(_nodeTypes);
     setState(() {
       final item = _nodeTypes.removeAt(oldIndex);
@@ -558,7 +564,7 @@ class _NodeTypesTabState extends ConsumerState<_NodeTypesTab> {
           editable: widget.isEditable,
           onSelected: (id) => setState(() => _selectedId = id),
           onAdd: _addNodeType,
-          onMove: _move,
+          onReorder: _reorder,
         );
         final editor = selected == null
             ? const _NoNodeTypeSelected()
@@ -610,7 +616,7 @@ class _NodeTypeNavigation extends StatelessWidget {
     required this.editable,
     required this.onSelected,
     required this.onAdd,
-    required this.onMove,
+    required this.onReorder,
   });
 
   final List<NodeType> nodeTypes;
@@ -618,7 +624,7 @@ class _NodeTypeNavigation extends StatelessWidget {
   final bool editable;
   final ValueChanged<String> onSelected;
   final VoidCallback onAdd;
-  final void Function(int oldIndex, int newIndex) onMove;
+  final void Function(int oldIndex, int newIndex) onReorder;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -650,81 +656,69 @@ class _NodeTypeNavigation extends StatelessWidget {
                   child: Text('暂无节点类型'),
                 )
               else
-                ...List.generate(nodeTypes.length, (index) {
-                  final nodeType = nodeTypes[index];
-                  final selected = nodeType.id == selectedId;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 7),
-                    child: Material(
-                      color: selected
-                          ? const Color(0xFFE9F1FB)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(11),
-                      child: InkWell(
+                ReorderableListView.builder(
+                  shrinkWrap: true,
+                  primary: false,
+                  physics: const NeverScrollableScrollPhysics(),
+                  buildDefaultDragHandles: false,
+                  proxyDecorator: reorderProxyDecorator,
+                  itemCount: nodeTypes.length,
+                  onReorder: onReorder,
+                  itemBuilder: (context, index) {
+                    final nodeType = nodeTypes[index];
+                    final selected = nodeType.id == selectedId;
+                    return Padding(
+                      key: ValueKey(nodeType.id),
+                      padding: const EdgeInsets.only(bottom: 7),
+                      child: Material(
+                        color: selected
+                            ? const Color(0xFFE9F1FB)
+                            : Colors.transparent,
                         borderRadius: BorderRadius.circular(11),
-                        onTap: () => onSelected(nodeType.id),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 11,
-                            vertical: 10,
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      nodeType.name,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleSmall,
-                                    ),
-                                    Text(
-                                      nodeType.key,
-                                      overflow: TextOverflow.ellipsis,
-                                      style:
-                                          Theme.of(context).textTheme.bodySmall,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (editable)
-                                Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    InkWell(
-                                      onTap: index > 0
-                                          ? () => onMove(index, index - 1)
-                                          : null,
-                                      child: Icon(
-                                        Icons.keyboard_arrow_up,
-                                        size: 18,
-                                        color: index > 0 ? null : Colors.grey,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(11),
+                          onTap: () => onSelected(nodeType.id),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 11,
+                              vertical: 10,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        nodeType.name,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleSmall,
                                       ),
-                                    ),
-                                    InkWell(
-                                      onTap: index < nodeTypes.length - 1
-                                          ? () => onMove(index, index + 1)
-                                          : null,
-                                      child: Icon(
-                                        Icons.keyboard_arrow_down,
-                                        size: 18,
-                                        color: index < nodeTypes.length - 1
-                                            ? null
-                                            : Colors.grey,
+                                      Text(
+                                        nodeType.key,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall,
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                            ],
+                                if (editable) ...[
+                                  const SizedBox(width: 6),
+                                  ReorderHandle(index: index),
+                                ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  );
-                }),
+                    );
+                  },
+                ),
             ],
           ),
         ),

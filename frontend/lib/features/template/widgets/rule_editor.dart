@@ -317,6 +317,9 @@ class _CountPill extends StatelessWidget {
       );
 }
 
+/// 父节点下拉框中代表“根节点”的虚拟选项，与真实节点类型 ID 不会冲突。
+const _rootParentValue = '__root__';
+
 class _RuleDialog extends ConsumerStatefulWidget {
   const _RuleDialog({
     required this.templateId,
@@ -334,7 +337,6 @@ class _RuleDialog extends ConsumerStatefulWidget {
 
 class _RuleDialogState extends ConsumerState<_RuleDialog> {
   final _formKey = GlobalKey<FormState>();
-  late bool _isRoot;
   String? _parentId;
   String? _childId;
   late final TextEditingController _min;
@@ -342,12 +344,15 @@ class _RuleDialogState extends ConsumerState<_RuleDialog> {
   bool _saving = false;
   String? _error;
 
+  bool get _isRoot => _parentId == _rootParentValue;
+
   @override
   void initState() {
     super.initState();
     final rule = widget.rule;
-    _isRoot = rule?.isRootRule ?? true;
-    _parentId = rule?.parentNodeTypeId;
+    _parentId = rule == null
+        ? null
+        : (rule.isRootRule ? _rootParentValue : rule.parentNodeTypeId);
     _childId = rule?.childNodeTypeId;
     _min = TextEditingController(text: '${rule?.minCount ?? 0}');
     _max = TextEditingController(text: '${rule?.maxCount ?? 0}');
@@ -419,32 +424,28 @@ class _RuleDialogState extends ConsumerState<_RuleDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('是否为根节点规则'),
-                subtitle: const Text('根节点规则决定文档树的起始节点'),
-                value: _isRoot,
-                onChanged: editing
-                    ? null
-                    : (value) => setState(() => _isRoot = value ?? false),
-              ),
-              const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 value: _parentId,
-                decoration: const InputDecoration(labelText: '父节点类型'),
-                items: widget.nodeTypes
-                    .map(
-                      (nodeType) => DropdownMenuItem(
-                        value: nodeType.id,
-                        child: Text(nodeType.name),
-                      ),
-                    )
-                    .toList(),
-                onChanged: _isRoot || editing
+                decoration: const InputDecoration(
+                  labelText: '父节点类型',
+                  helperText: '选择“根节点”即为文档树的起始节点规则',
+                ),
+                items: [
+                  const DropdownMenuItem(
+                    value: _rootParentValue,
+                    child: Text('根节点'),
+                  ),
+                  ...widget.nodeTypes.map(
+                    (nodeType) => DropdownMenuItem(
+                      value: nodeType.id,
+                      child: Text(nodeType.name),
+                    ),
+                  ),
+                ],
+                onChanged: editing
                     ? null
                     : (value) => setState(() => _parentId = value),
-                validator: (value) =>
-                    !_isRoot && value == null ? '请选择父节点' : null,
+                validator: (value) => value == null ? '请选择父节点' : null,
               ),
               const SizedBox(height: 14),
               DropdownButtonFormField<String>(

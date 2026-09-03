@@ -5,6 +5,7 @@ import '../../../core/api/api_endpoints.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../models/node.dart';
 import '../../../models/template.dart';
+import '../../../shared/widgets/browser_context_menu_scope.dart';
 import '../../../shared/widgets/confirm_dialog.dart';
 import '../project_provider.dart';
 import 'context_menu.dart';
@@ -120,24 +121,26 @@ class _ProjectTreeViewState extends ConsumerState<ProjectTreeView> {
 
   Future<void> _showMenu(TreeNode node, Offset position) async {
     if (!widget.isEditable && !widget.canManagePermissions) return;
-    await NodeContextMenu.show(
-      context,
-      node: node,
-      template: widget.template,
-      isEditable: widget.isEditable,
-      canManagePermissions: widget.canManagePermissions,
-      allNodes: widget.nodes,
-      position: position,
-      onAddChild: (key) => _addChild(node, key),
-      onDelete: () => _delete(node),
-      onManagePermissions: () {
-        PermissionDialog.show(
-          context,
-          projectId: widget.projectId,
-          nodeId: node.id,
-          nodeName: node.name,
-        );
-      },
+    await BrowserContextMenuScope.keepDisabled(
+      () => NodeContextMenu.show(
+        context,
+        node: node,
+        template: widget.template,
+        isEditable: widget.isEditable,
+        canManagePermissions: widget.canManagePermissions,
+        allNodes: widget.nodes,
+        position: position,
+        onAddChild: (key) => _addChild(node, key),
+        onDelete: () => _delete(node),
+        onManagePermissions: () {
+          PermissionDialog.show(
+            context,
+            projectId: widget.projectId,
+            nodeId: node.id,
+            nodeName: node.name,
+          );
+        },
+      ),
     );
   }
 
@@ -174,53 +177,55 @@ class _ProjectTreeViewState extends ConsumerState<ProjectTreeView> {
     if (tree.isEmpty) {
       return const Center(child: Text('暂无节点'));
     }
-    return Column(
-      children: [
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
-            itemCount: visible.length,
-            itemBuilder: (context, index) {
-              final item = visible[index];
-              return TreeNodeItem(
-                node: item.node,
-                depth: item.depth,
-                isExpanded: notifier.expandedNodeIds.contains(item.node.id),
-                isSelected: item.node.id == selectedId,
-                hasChildren: item.node.children.isNotEmpty,
-                nodeType: widget.template.nodeTypes
-                    .where((type) => type.key == item.node.nodeTypeKey)
-                    .firstOrNull,
-                onToggle: () => notifier.toggleExpand(item.node.id),
-                onSelected: () {
-                  notifier.selectNode(item.node.id);
-                  ref.read(selectedNodeProvider.notifier).state = item.node;
-                  widget.onNodeSelected(item.node);
-                },
-                onSecondaryTap: (position) => _showMenu(item.node, position),
-              );
-            },
-          ),
-        ),
-        if (widget.isEditable &&
-            tree.length == 1 &&
-            tree.first.children.isEmpty)
-          Container(
-            margin: const EdgeInsets.all(12),
-            padding: const EdgeInsets.all(13),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.ads_click_outlined, size: 18),
-                SizedBox(width: 9),
-                Expanded(child: Text('暂无节点，右键根节点添加')),
-              ],
+    return BrowserContextMenuScope(
+      child: Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
+              itemCount: visible.length,
+              itemBuilder: (context, index) {
+                final item = visible[index];
+                return TreeNodeItem(
+                  node: item.node,
+                  depth: item.depth,
+                  isExpanded: notifier.expandedNodeIds.contains(item.node.id),
+                  isSelected: item.node.id == selectedId,
+                  hasChildren: item.node.children.isNotEmpty,
+                  nodeType: widget.template.nodeTypes
+                      .where((type) => type.key == item.node.nodeTypeKey)
+                      .firstOrNull,
+                  onToggle: () => notifier.toggleExpand(item.node.id),
+                  onSelected: () {
+                    notifier.selectNode(item.node.id);
+                    ref.read(selectedNodeProvider.notifier).state = item.node;
+                    widget.onNodeSelected(item.node);
+                  },
+                  onSecondaryTap: (position) => _showMenu(item.node, position),
+                );
+              },
             ),
           ),
-      ],
+          if (widget.isEditable &&
+              tree.length == 1 &&
+              tree.first.children.isEmpty)
+            Container(
+              margin: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(13),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.ads_click_outlined, size: 18),
+                  SizedBox(width: 9),
+                  Expanded(child: Text('暂无节点，右键根节点添加')),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -251,84 +256,79 @@ class TreeNodeItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Offset? pointerPosition;
     final typeColor = _parseColor(nodeType?.color);
     return Padding(
       padding: EdgeInsets.only(left: depth * 24.0, bottom: 3),
-      child: Listener(
-        onPointerDown: (event) => pointerPosition = event.position,
-        child: GestureDetector(
-          onDoubleTap: hasChildren ? onToggle : null,
-          onLongPressStart: (details) => onSecondaryTap(details.globalPosition),
-          onSecondaryTap: () {
-            if (pointerPosition != null) onSecondaryTap(pointerPosition!);
-          },
-          child: Material(
-            color: isSelected
-                ? Theme.of(context).colorScheme.primaryContainer
-                : Colors.transparent,
+      child: GestureDetector(
+        onDoubleTap: hasChildren ? onToggle : null,
+        onLongPressStart: (details) => onSecondaryTap(details.globalPosition),
+        onSecondaryTapDown: (details) =>
+            onSecondaryTap(details.globalPosition),
+        child: Material(
+          color: isSelected
+              ? Theme.of(context).colorScheme.primaryContainer
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            onTap: onSelected,
             borderRadius: BorderRadius.circular(10),
-            child: InkWell(
-              onTap: onSelected,
-              borderRadius: BorderRadius.circular(10),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 30,
-                      height: 30,
-                      child: hasChildren
-                          ? IconButton(
-                              padding: EdgeInsets.zero,
-                              tooltip: isExpanded ? '折叠' : '展开',
-                              onPressed: onToggle,
-                              icon: Icon(
-                                isExpanded
-                                    ? Icons.expand_more_rounded
-                                    : Icons.chevron_right_rounded,
-                                size: 20,
-                              ),
-                            )
-                          : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 30,
+                    height: 30,
+                    child: hasChildren
+                        ? IconButton(
+                            padding: EdgeInsets.zero,
+                            tooltip: isExpanded ? '折叠' : '展开',
+                            onPressed: onToggle,
+                            icon: Icon(
+                              isExpanded
+                                  ? Icons.expand_more_rounded
+                                  : Icons.chevron_right_rounded,
+                              size: 20,
+                            ),
+                          )
+                        : null,
+                  ),
+                  Container(
+                    width: 29,
+                    height: 29,
+                    decoration: BoxDecoration(
+                      color: typeColor.withOpacity(0.13),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    Container(
-                      width: 29,
-                      height: 29,
-                      decoration: BoxDecoration(
-                        color: typeColor.withOpacity(0.13),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(
-                        depth == 0
-                            ? Icons.account_tree_outlined
-                            : Icons.description_outlined,
-                        color: typeColor,
-                        size: 17,
-                      ),
+                    child: Icon(
+                      depth == 0
+                          ? Icons.account_tree_outlined
+                          : Icons.description_outlined,
+                      color: typeColor,
+                      size: 17,
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            node.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                          Text(
-                            nodeType?.name ?? node.nodeTypeKey,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                        ],
-                      ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          node.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        Text(
+                          nodeType?.name ?? node.nodeTypeKey,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),

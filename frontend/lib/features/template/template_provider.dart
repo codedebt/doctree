@@ -25,8 +25,10 @@ final templateListProvider =
       .toList();
 });
 
-final templateDetailProvider =
-    FutureProvider.family<Template, String>((ref, id) async {
+// autoDispose：离开模板编辑页后释放缓存，重新进入时拉取最新的节点类型/字段排序，
+// 避免展示上一次进入时的旧快照。
+final templateDetailProvider = FutureProvider.autoDispose
+    .family<Template, String>((ref, id) async {
   final apiClient = ref.read(apiClientProvider);
   final response = await apiClient.get<dynamic>(ApiEndpoints.template(id));
   return Template.fromJson(_responseMap(response.data));

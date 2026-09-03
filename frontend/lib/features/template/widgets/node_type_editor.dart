@@ -7,6 +7,7 @@ import '../../../core/api/api_endpoints.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../models/template.dart';
 import '../../../shared/widgets/confirm_dialog.dart';
+import '../../../shared/widgets/reorder_handle.dart';
 import 'field_editor.dart';
 
 class NodeTypeEditor extends ConsumerStatefulWidget {
@@ -171,6 +172,11 @@ class _NodeTypeEditorState extends ConsumerState<NodeTypeEditor> {
     }
   }
 
+  Future<void> _reorderFields(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex -= 1;
+    await _moveField(oldIndex, newIndex);
+  }
+
   Future<void> _moveField(int oldIndex, int newIndex) async {
     if (!widget.isEditable || oldIndex == newIndex) return;
     final previous = List<Field>.from(_fields);
@@ -311,22 +317,29 @@ class _NodeTypeEditorState extends ConsumerState<NodeTypeEditor> {
             if (_fields.isEmpty)
               const _EmptyFields()
             else
-              ...List.generate(_fields.length, (index) {
-                final field = _fields[index];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: _FieldRow(
-                    field: field,
-                    isEditable: widget.isEditable,
-                    canMoveUp: index > 0,
-                    canMoveDown: index < _fields.length - 1,
-                    onEdit: () => _openFieldEditor(field),
-                    onDelete: () => _deleteField(field),
-                    onMoveUp: () => _moveField(index, index - 1),
-                    onMoveDown: () => _moveField(index, index + 1),
-                  ),
-                );
-              }),
+              ReorderableListView.builder(
+                shrinkWrap: true,
+                primary: false,
+                physics: const NeverScrollableScrollPhysics(),
+                buildDefaultDragHandles: false,
+                proxyDecorator: reorderProxyDecorator,
+                itemCount: _fields.length,
+                onReorder: _reorderFields,
+                itemBuilder: (context, index) {
+                  final field = _fields[index];
+                  return Padding(
+                    key: ValueKey(field.id),
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _FieldRow(
+                      index: index,
+                      field: field,
+                      isEditable: widget.isEditable,
+                      onEdit: () => _openFieldEditor(field),
+                      onDelete: () => _deleteField(field),
+                    ),
+                  );
+                },
+              ),
           ],
         ),
       ),
@@ -336,24 +349,18 @@ class _NodeTypeEditorState extends ConsumerState<NodeTypeEditor> {
 
 class _FieldRow extends StatelessWidget {
   const _FieldRow({
+    required this.index,
     required this.field,
     required this.isEditable,
-    required this.canMoveUp,
-    required this.canMoveDown,
     required this.onEdit,
     required this.onDelete,
-    required this.onMoveUp,
-    required this.onMoveDown,
   });
 
+  final int index;
   final Field field;
   final bool isEditable;
-  final bool canMoveUp;
-  final bool canMoveDown;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
-  final VoidCallback onMoveUp;
-  final VoidCallback onMoveDown;
 
   @override
   Widget build(BuildContext context) {
@@ -367,11 +374,14 @@ class _FieldRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Row(
             children: [
-              Icon(
-                field.deletable ? Icons.drag_indicator : Icons.lock_outline,
-                size: 19,
-                color: const Color(0xFF8390A6),
-              ),
+              if (isEditable)
+                ReorderHandle(index: index)
+              else
+                Icon(
+                  field.deletable ? Icons.drag_indicator : Icons.lock_outline,
+                  size: 19,
+                  color: const Color(0xFF8390A6),
+                ),
               const SizedBox(width: 10),
               Expanded(
                 flex: 2,
@@ -399,16 +409,6 @@ class _FieldRow extends StatelessWidget {
                     : const SizedBox.shrink(),
               ),
               if (isEditable) ...[
-                IconButton(
-                  tooltip: '上移',
-                  onPressed: canMoveUp ? onMoveUp : null,
-                  icon: const Icon(Icons.keyboard_arrow_up),
-                ),
-                IconButton(
-                  tooltip: '下移',
-                  onPressed: canMoveDown ? onMoveDown : null,
-                  icon: const Icon(Icons.keyboard_arrow_down),
-                ),
                 IconButton(
                   tooltip: '编辑字段',
                   onPressed: onEdit,
